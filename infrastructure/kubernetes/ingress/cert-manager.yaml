@@ -1,0 +1,189 @@
+# cert-manager configuration for Hotel Management ERP
+# Version: v1.11.0
+# Purpose: Automated TLS certificate management with enhanced security and monitoring
+
+---
+# Namespace configuration for cert-manager
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    name: cert-manager
+    environment: production
+    criticality: high
+    security-tier: critical
+  annotations:
+    security.network.k8s.io/isolation: "strict"
+    compliance.security/pci-dss: "enabled"
+
+---
+# cert-manager deployment configuration
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  namespace: cert-manager
+  annotations:
+    monitoring.cert-manager.io/prometheus-enabled: "true"
+    cert-manager.io/issue-temporary-certificate: "true"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@hotel-erp.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+          podTemplate:
+            metadata:
+              labels:
+                security-context: restricted
+            spec:
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                fsGroup: 2000
+              nodeSelector:
+                kubernetes.io/os: linux
+              tolerations:
+              - key: "CriticalAddonsOnly"
+                operator: "Exists"
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 200m
+                  memory: 256Mi
+
+---
+# Certificate monitoring configuration
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+  labels:
+    app: cert-manager
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: cert-manager
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: false
+    bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+---
+# PrometheusRule for certificate alerts
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cert-manager-alerts
+  namespace: cert-manager
+  labels:
+    app: cert-manager
+    severity: critical
+spec:
+  groups:
+  - name: cert-manager.rules
+    rules:
+    - alert: CertificateExpiringSoon
+      expr: |
+        certmanager_certificate_expiration_timestamp_seconds - time() < (30 * 24 * 60 * 60)
+      for: 1h
+      labels:
+        severity: warning
+      annotations:
+        description: "Certificate {{ $labels.certificate }} in namespace {{ $labels.namespace }} is expiring in less than 30 days"
+        summary: "Certificate expiring soon"
+    - alert: CertificateIssueFailed
+      expr: |
+        increase(certmanager_certificate_issue_attempts_total{status="failed"}[5m]) > 0
+      for: 10m
+      labels:
+        severity: critical
+      annotations:
+        description: "Certificate issuance failed for {{ $labels.certificate }} in namespace {{ $labels.namespace }}"
+        summary: "Certificate issuance failure"
+
+---
+# High Availability configuration
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cert-manager-pdb
+  namespace: cert-manager
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: cert-manager
+
+---
+# Backup configuration for certificates
+apiVersion: velero.io/v1
+kind: BackupSchedule
+metadata:
+  name: cert-manager-backup
+  namespace: cert-manager
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  template:
+    includedNamespaces:
+    - cert-manager
+    - hotel-erp-prod
+    labelSelector:
+      matchLabels:
+        app: cert-manager
+    storageLocation: default
+    ttl: 720h  # 30 days retention
+    hooks:
+      resources:
+        - name: certificate-pre-backup
+          includedNamespaces:
+          - cert-manager
+          labelSelector:
+            matchLabels:
+              app: cert-manager
+
+---
+# Network Policy for cert-manager
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cert-manager-network-policy
+  namespace: cert-manager
+spec:
+  podSelector:
+    matchLabels:
+      app: cert-manager
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: hotel-erp-prod
+    ports:
+    - protocol: TCP
+      port: 9402  # Metrics port
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 169.254.0.0/16
+        - 172.16.0.0/12
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for ACME
