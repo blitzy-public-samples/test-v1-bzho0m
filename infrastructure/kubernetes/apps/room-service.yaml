@@ -1,0 +1,164 @@
+# Room Service Kubernetes Deployment Configuration
+# Version: 1.0.0
+# Purpose: Manages hotel room inventory, housekeeping, maintenance, and door lock operations
+# Dependencies: Requires configmap.yaml, storage-class.yaml and namespace.yaml
+
+---
+# Deployment configuration for Room Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: room-service
+  namespace: hotel-erp-${ENV}
+  labels:
+    app: hotel-erp
+    service: room-service
+    environment: ${ENV}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+    prometheus.io/path: "/metrics"
+spec:
+  replicas: 3  # High availability with 3 replicas
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero-downtime deployments
+  selector:
+    matchLabels:
+      app: hotel-erp
+      service: room-service
+  template:
+    metadata:
+      labels:
+        app: hotel-erp
+        service: room-service
+    spec:
+      # Security context for pod
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      # Pod anti-affinity for high availability
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: service
+                  operator: In
+                  values:
+                  - room-service
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: room-service
+        image: hotel-erp/room-service:${VERSION}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        - containerPort: 9090
+          name: metrics
+        # Resource limits as per infrastructure requirements
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 30
+        # Environment configuration
+        envFrom:
+        - configMapRef:
+            name: hotel-erp-config
+        # Volume mounts
+        volumeMounts:
+        - name: room-service-data
+          mountPath: /usr/src/app/data
+        - name: lock-system-keys
+          mountPath: /usr/src/app/keys
+          readOnly: true
+        # Container security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: room-service-data
+        persistentVolumeClaim:
+          claimName: room-service-pvc
+      - name: lock-system-keys
+        secret:
+          secretName: lock-system-keys
+
+---
+# Persistent Volume Claim for Room Service data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: room-service-pvc
+  namespace: hotel-erp-${ENV}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: hotel-erp-standard-ssd
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# Service configuration for Room Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: room-service
+  namespace: hotel-erp-${ENV}
+  labels:
+    app: hotel-erp
+    service: room-service
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+      name: http
+    - port: 9090
+      targetPort: 9090
+      protocol: TCP
+      name: metrics
+  selector:
+    app: hotel-erp
+    service: room-service
