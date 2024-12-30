@@ -1,0 +1,93 @@
+# Logstash Configuration v7.17.0
+# Hotel Management ERP System - Production Environment
+
+# Node Settings
+node.name: ${HOSTNAME}
+node.host: "0.0.0.0"
+node.rack: ${RACK_ENV:prod}
+node.datacenter: ${DC_NAME:primary}
+
+# Path Settings
+path.data: /usr/share/logstash/data
+path.logs: /usr/share/logstash/logs
+path.config: /usr/share/logstash/pipeline
+path.queue: /usr/share/logstash/queue
+path.plugins: /usr/share/logstash/plugins
+
+# Pipeline Settings
+pipeline:
+  id: "hotel-management-erp"
+  workers: 4
+  batch.size: 250
+  batch.delay: 50
+  unsafe_shutdown: false
+  ordered: true
+  max_inflight_requests: 500
+  ecs_compatibility: "v8"
+
+# Monitoring Settings
+monitoring:
+  enabled: true
+  collection.interval: "10s"
+  elasticsearch:
+    hosts: ["https://elasticsearch:9200"]
+    username: "logstash_system"
+    password: "${LOGSTASH_SYSTEM_PASSWORD}"
+    ssl:
+      certificate_authority: "/etc/logstash/certs/ca.crt"
+      verification_mode: "full"
+    sniffing: true
+  metrics.enabled: true
+  state.enabled: true
+
+# Queue Settings
+queue:
+  type: "persisted"
+  max_bytes: "2gb"
+  page_capacity: "128mb"
+  drain: true
+  checkpoint:
+    writes: 1024
+    interval: "1m"
+
+# API Settings
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 9600
+  ssl:
+    enabled: true
+    certificate: "/etc/logstash/certs/logstash.crt"
+    key: "/etc/logstash/certs/logstash.key"
+    certificate_authority: "/etc/logstash/certs/ca.crt"
+  auth:
+    type: "basic"
+    basic:
+      username: "${API_USER}"
+      password: "${API_PASSWORD}"
+
+# Logging Settings
+logging:
+  level: ${LOG_LEVEL:info}
+  format:
+    type: "json"
+  slowlog.threshold:
+    warn: "2s"
+    info: "1s"
+    debug: "500ms"
+    trace: "100ms"
+
+# X-Pack Settings
+xpack:
+  monitoring:
+    enabled: true
+    collection.interval: "10s"
+  management:
+    enabled: true
+    elasticsearch:
+      hosts: ["https://elasticsearch:9200"]
+      username: "logstash_admin"
+      password: "${LOGSTASH_ADMIN_PASSWORD}"
+      ssl:
+        certificate_authority: "/etc/logstash/certs/ca.crt"
+    pipeline.id: "hotel-management-erp"
