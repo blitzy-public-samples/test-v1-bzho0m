@@ -1,0 +1,139 @@
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnpm-store/
+
+# Environment Files
+.env
+.env.*
+.env.local
+.env.development
+.env.test
+.env.production
+config.local.*
+*.config.local.js
+*.config.local.ts
+
+# Build Output
+dist/
+build/
+out/
+*.tsbuildinfo
+.next/
+.nuxt/
+.output/
+
+# Testing and Coverage
+coverage/
+.nyc_output/
+test-results/
+junit.xml
+test-report.xml
+
+# Security Files
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.keystore
+ssl/
+certificates/
+secrets/
+
+# IDE and Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Logs and Temporary
+*.log
+logs/
+tmp/
+temp/
+.temp/
+*.tmp
+*.bak
+*.cache
+
+# Project Specific
+# Hotel Management ERP sensitive files
+door-lock-config.json
+payment-gateway-test.json
+local-db/
+mock-data/
+test-credentials/
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+pgdata/
+
+# API Documentation
+api-docs/generated/
+swagger-static/
+
+# Frontend
+src/web/.cache/
+src/web/build/
+src/web/.env*
+src/web/coverage/
+
+# Backend
+src/backend/dist/
+src/backend/.env*
+src/backend/coverage/
+src/backend/logs/
+
+# Mobile App
+src/mobile/ios/Pods/
+src/mobile/android/build/
+src/mobile/.gradle/
+src/mobile/build/
+src/mobile/*.hprof
+
+# Docker
+.docker/data/
+docker-compose.override.yml
+
+# Kubernetes
+k8s/secrets/
+kubeconfig*
+
+# Monitoring and Metrics
+grafana-data/
+prometheus-data/
+elasticsearch-data/
+
+# Deployment
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraformrc
+terraform.rc
+*.tfvars
+
+# Debug
+.debug/
+debug.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
