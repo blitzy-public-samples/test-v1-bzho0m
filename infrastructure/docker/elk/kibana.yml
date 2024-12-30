@@ -1,0 +1,104 @@
+# Kibana 7.17.0 Configuration
+# Hotel Management ERP System
+
+#===========================================
+# Server Configuration
+#===========================================
+server.name: ${HOSTNAME}
+server.host: "0.0.0.0"
+server.port: 5601
+server.basePath: ""
+server.maxPayloadBytes: 1048576
+
+# SSL/TLS Configuration
+server.ssl.enabled: true
+server.ssl.certificate: "/etc/kibana/certs/kibana.crt"
+server.ssl.key: "/etc/kibana/certs/kibana.key"
+server.ssl.certificateAuthorities: ["/etc/kibana/certs/ca.crt"]
+
+#===========================================
+# Elasticsearch Configuration
+#===========================================
+elasticsearch.hosts: ["http://elasticsearch:9200"]
+elasticsearch.username: "kibana_system"
+elasticsearch.password: "${KIBANA_SYSTEM_PASSWORD}"
+
+# Elasticsearch SSL Configuration
+elasticsearch.ssl.certificateAuthorities: ["/etc/kibana/certs/ca.crt"]
+elasticsearch.ssl.verificationMode: "certificate"
+
+#===========================================
+# Monitoring Configuration
+#===========================================
+monitoring.ui.container.elasticsearch.enabled: true
+monitoring.ui.container.logstash.enabled: true
+monitoring.kibana.collection.enabled: true
+monitoring.kibana.collection.interval: 10000
+
+#===========================================
+# X-Pack Features
+#===========================================
+xpack.security.enabled: true
+xpack.monitoring.enabled: true
+xpack.reporting.enabled: true
+xpack.reporting.encryptionKey: "${REPORTING_ENCRYPTION_KEY}"
+xpack.encryptedSavedObjects.encryptionKey: "${SAVED_OBJECTS_ENCRYPTION_KEY}"
+
+#===========================================
+# Logging Configuration
+#===========================================
+logging:
+  appenders:
+    default:
+      type: json
+      layout:
+        type: pattern
+        pattern: "[%d{ISO8601}][%-5p][%-25c] %m%n"
+  root:
+    level: info
+
+#===========================================
+# Advanced Settings
+#===========================================
+# Set default route to dashboard overview
+server.defaultRoute: "/app/dashboards#/list"
+
+# CORS settings for development
+server.cors.enabled: false
+
+# CSP settings
+server.csp.rules: ["script-src 'self' 'unsafe-eval' 'unsafe-inline'"]
+
+# Session timeout (15 minutes)
+xpack.security.session.idleTimeout: "15m"
+
+# Reporting timeout (2 minutes)
+xpack.reporting.capture.timeouts.waitForElements: 120000
+
+# Set maximum concurrent connections
+server.maxPayloadBytes: 1048576
+
+# Enable telemetry for system monitoring
+telemetry.enabled: true
+
+# Enable saved object migrations
+migrations.skip: false
+
+# Set maximum bucket size for visualizations
+visualization.pointSize.maxFontSize: 72
+
+#===========================================
+# Performance Tuning
+#===========================================
+# Optimize memory usage
+optimization.usageCollectionAllowlist: ["api", "canvas", "dashboard"]
+optimization.watcherLimit: 5
+
+# Cache settings
+cache.maxAge: 3600000
+
+#===========================================
+# Status Configuration
+#===========================================
+status.allowAnonymous: false
+status.v6ApiFormat: true
