@@ -1,0 +1,182 @@
+# Backend Continuous Integration Workflow
+# Version: 1.0.0
+# Dependencies:
+# - Node.js v18.x
+# - pnpm v8+
+# - Jest v29+
+# - SonarCloud
+# - Snyk
+
+name: Backend CI
+
+# Trigger configuration
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/backend/**'
+  workflow_dispatch: # Manual trigger option
+
+# Environment variables
+env:
+  NODE_VERSION: '18.x'
+  PNPM_VERSION: '8.x'
+  COVERAGE_THRESHOLD: 80
+  CACHE_KEY_PREFIX: 'backend-deps'
+  WORKING_DIRECTORY: './src/backend'
+
+# Workflow jobs
+jobs:
+  build_and_test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60 # Total job timeout
+
+    steps:
+      # Checkout repository
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Required for SonarCloud analysis
+
+      # Setup Node.js environment
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+          cache-dependency-path: ${{ env.WORKING_DIRECTORY }}/pnpm-lock.yaml
+
+      # Install pnpm
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      # Cache dependencies
+      - name: Cache Dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ env.WORKING_DIRECTORY }}/node_modules
+            ${{ env.WORKING_DIRECTORY }}/.pnpm-store
+          key: ${{ env.CACHE_KEY_PREFIX }}-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ env.CACHE_KEY_PREFIX }}-${{ runner.os }}-
+
+      # Install dependencies
+      - name: Install Dependencies
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: pnpm install --frozen-lockfile
+
+      # Lint check
+      - name: Run ESLint
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: pnpm lint
+        timeout-minutes: 5
+
+      # TypeScript compilation
+      - name: TypeScript Build
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: pnpm build
+        timeout-minutes: 10
+
+      # Unit tests with coverage
+      - name: Run Unit Tests
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: pnpm test:coverage
+        timeout-minutes: 15
+        env:
+          CI: true
+          JEST_JUNIT_OUTPUT_DIR: ./reports/junit
+          JEST_JUNIT_OUTPUT_NAME: unit-tests.xml
+
+      # Integration tests
+      - name: Run Integration Tests
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+        run: |
+          pnpm docker:up
+          pnpm test:integration
+          pnpm docker:down
+        timeout-minutes: 30
+        env:
+          CI: true
+
+      # Security scan with Snyk
+      - name: Snyk Security Scan
+        uses: snyk/actions/node@v3
+        with:
+          args: --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        timeout-minutes: 20
+
+      # SonarCloud analysis
+      - name: SonarCloud Analysis
+        uses: SonarSource/sonarcloud-github-action@v1.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=hotel-management-erp-backend
+            -Dsonar.organization=${{ github.repository_owner }}
+            -Dsonar.sources=src
+            -Dsonar.tests=tests
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+            -Dsonar.coverage.exclusions=**/*.test.ts,**/*.spec.ts,**/tests/**
+        timeout-minutes: 10
+
+      # Upload test results
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            ${{ env.WORKING_DIRECTORY }}/coverage
+            ${{ env.WORKING_DIRECTORY }}/reports
+          retention-days: 14
+
+  notify:
+    name: Notification
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Check Build Status
+        uses: technote-space/workflow-conclusion-action@v3
+
+      - name: Send Slack Notification
+        if: env.WORKFLOW_CONCLUSION != 'success'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ env.WORKFLOW_CONCLUSION }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Update GitHub Status
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const conclusion = process.env.WORKFLOW_CONCLUSION;
+            const description = conclusion === 'success' 
+              ? 'All checks passed successfully' 
+              : 'Some checks failed';
+            
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: conclusion === 'success' ? 'success' : 'failure',
+              description: description,
+              context: 'Backend CI'
+            });
