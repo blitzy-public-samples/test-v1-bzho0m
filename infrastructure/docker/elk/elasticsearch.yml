@@ -1,0 +1,154 @@
+# Elasticsearch 7.17.0 Configuration
+# Hotel Management ERP System - Monitoring & Observability Stack
+
+# ---------------------------------- Cluster -----------------------------------
+cluster:
+  name: hotel-erp-monitoring
+  initial_master_nodes: ["${HOSTNAME}"]
+  routing:
+    allocation:
+      disk:
+        threshold_enabled: true
+        watermark:
+          low: "85%"
+          high: "90%"
+          flood_stage: "95%"
+      awareness:
+        attributes: ["zone", "rack"]
+      enable: "all"
+
+# ------------------------------------ Node ------------------------------------
+node:
+  name: "${HOSTNAME}"
+  master: true
+  data: true
+  ingest: true
+  max_local_storage_nodes: 1
+  attr:
+    zone: "${ZONE}"
+    rack: "${RACK}"
+
+# ----------------------------------- Paths -----------------------------------
+path:
+  data: /usr/share/elasticsearch/data
+  logs: /usr/share/elasticsearch/logs
+
+# ---------------------------------- Network ---------------------------------
+network:
+  host: 0.0.0.0
+  port: 9200
+  bind_host: 0.0.0.0
+  publish_host: "${HOSTNAME}"
+  transport:
+    tcp:
+      port: 9300
+      compress: true
+
+# --------------------------------- Security ---------------------------------
+security:
+  enabled: true
+  ssl:
+    enabled: true
+    key: /etc/elasticsearch/certs/elasticsearch.key
+    certificate: /etc/elasticsearch/certs/elasticsearch.crt
+    certificate_authorities: ["/etc/elasticsearch/certs/ca.crt"]
+    verification_mode: "full"
+    client_authentication: "required"
+  authc:
+    realms:
+      native:
+        native1:
+          order: 0
+          enabled: true
+    api_key:
+      enabled: true
+    token:
+      enabled: true
+
+# ----------------------------------- XPack ----------------------------------
+xpack:
+  security:
+    enabled: true
+    audit:
+      enabled: true
+  monitoring:
+    enabled: true
+    collection:
+      enabled: true
+      interval: "10s"
+    history:
+      duration: "7d"
+  watcher:
+    enabled: true
+
+# -------------------------------- Bootstrap --------------------------------
+bootstrap:
+  memory_lock: true
+  system_call_filter: true
+
+# System limits
+vm.max_map_count: 262144
+ulimit:
+  memlock: "unlimited"
+  nofile: 65536
+
+# ---------------------------------- Indices ---------------------------------
+indices:
+  recovery:
+    max_bytes_per_sec: "50mb"
+  fielddata:
+    cache:
+      size: "20%"
+  query:
+    bool:
+      max_clause_count: 2048
+  number_of_shards: 1
+  number_of_replicas: 1
+  refresh_interval: "30s"
+  max_result_window: 10000
+
+# ---------------------------------- Discovery -------------------------------
+discovery:
+  type: single-node
+  seed_hosts: ["127.0.0.1:9300"]
+  zen:
+    minimum_master_nodes: 1
+    ping_timeout: 5s
+    join_timeout: 30s
+
+# ---------------------------------- Gateway --------------------------------
+gateway:
+  recover_after_nodes: 1
+  recover_after_time: "5m"
+  expected_nodes: 1
+
+# ---------------------------------- Action ----------------------------------
+action:
+  destructive_requires_name: true
+  auto_create_index: false
+
+# ---------------------------------- HTTP -----------------------------------
+http:
+  compression: true
+  cors:
+    enabled: false
+  max_content_length: "100mb"
+  max_initial_line_length: "4kb"
+  max_header_size: "8kb"
+  pipelining: true
+  pipelining.max_events: 10000
+
+# ------------------------------- Thread Pools ------------------------------
+thread_pool:
+  write:
+    size: 32
+    queue_size: 1000
+  search:
+    size: 16
+    queue_size: 1000
+  get:
+    size: 16
+    queue_size: 1000
+  bulk:
+    size: 8
+    queue_size: 500
