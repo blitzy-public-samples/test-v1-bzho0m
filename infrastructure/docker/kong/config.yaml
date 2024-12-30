@@ -1,0 +1,250 @@
+# Kong API Gateway Configuration v1.0.0
+# Version: Kong 3.4.0
+# Purpose: Enterprise-grade API Gateway configuration for Hotel Management ERP system
+
+_format_version: "3.0"
+_transform: true
+
+# Global Configuration
+services:
+  # Billing Service Configuration
+  - name: billing-service
+    url: http://billing-service:3000
+    protocol: http2
+    port: 3000
+    retries: 5
+    connect_timeout: 60000
+    write_timeout: 60000
+    read_timeout: 60000
+    tags:
+      - billing
+      - core
+    routes:
+      - name: billing-routes
+        paths:
+          - /api/v1/billing
+        strip_path: true
+        preserve_host: false
+        protocols: 
+          - http
+          - https
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+    plugins:
+      - name: circuit-breaker
+        config:
+          timeout: 60000
+          threshold: 0.5
+          window_size: 60
+          volume_threshold: 20
+
+  # Reservation Service Configuration
+  - name: reservation-service
+    url: http://reservation-service:3000
+    protocol: http2
+    port: 3000
+    retries: 3
+    connect_timeout: 60000
+    write_timeout: 60000
+    read_timeout: 60000
+    tags:
+      - reservations
+      - core
+    routes:
+      - name: reservation-routes
+        paths:
+          - /api/v1/reservations
+        strip_path: true
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+
+  # Room Service Configuration
+  - name: room-service
+    url: http://room-service:3000
+    protocol: http2
+    port: 3000
+    retries: 3
+    connect_timeout: 60000
+    write_timeout: 60000
+    read_timeout: 60000
+    tags:
+      - rooms
+      - core
+    routes:
+      - name: room-routes
+        paths:
+          - /api/v1/rooms
+        strip_path: true
+        preserve_host: false
+        protocols:
+          - http
+          - https
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+
+# Global Plugins Configuration
+plugins:
+  # Authentication Plugin
+  - name: jwt
+    config:
+      secret_key: ${JWT_SECRET}
+      key_claim_name: kid
+      claims_to_verify:
+        - exp
+        - nbf
+        - iss
+        - role
+      maximum_expiration: 7200
+      run_on_preflight: true
+      cookie_names:
+        - access_token
+      header_names:
+        - Authorization
+
+  # Rate Limiting Plugin
+  - name: rate-limiting
+    config:
+      second: 50
+      minute: 1000
+      hour: 10000
+      policy: redis
+      redis_host: redis-sentinel
+      redis_port: 26379
+      redis_timeout: 2000
+      redis_password: ${REDIS_PASSWORD}
+      fault_tolerant: true
+      hide_client_headers: false
+
+  # Monitoring Plugin
+  - name: prometheus
+    config:
+      status_codes: true
+      latency: true
+      bandwidth: true
+      per_consumer: true
+      upstream_health: true
+      per_workspace: true
+
+  # Circuit Breaker Plugin
+  - name: circuit-breaker
+    config:
+      timeout: 60000
+      threshold: 0.5
+      window_size: 60
+      volume_threshold: 20
+      retry_timeout: 60000
+
+  # CORS Plugin
+  - name: cors
+    config:
+      origins:
+        - "*"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Authorization
+        - Content-Type
+        - X-Request-ID
+      exposed_headers:
+        - X-Auth-Token
+      credentials: true
+      max_age: 3600
+      preflight_continue: false
+
+  # Response Transformer Plugin
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - X-Kong-Proxy-Latency:${latency}
+          - X-Kong-Upstream-Latency:${upstream_latency}
+          - X-Kong-Request-ID:${request_id}
+      remove:
+        headers:
+          - Server
+
+  # IP Restriction Plugin
+  - name: ip-restriction
+    config:
+      allow:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+      deny:
+        - 0.0.0.0/0
+
+# Consumer Configuration
+consumers:
+  - username: hotel-management-system
+    custom_id: hms-internal
+    tags:
+      - internal
+      - core
+
+# Upstream Configuration
+upstreams:
+  - name: billing-service
+    algorithm: round-robin
+    healthchecks:
+      active:
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 5
+          timeouts: 3
+          http_failures: 3
+    targets:
+      - target: billing-service:3000
+        weight: 100
+
+  - name: reservation-service
+    algorithm: round-robin
+    healthchecks:
+      active:
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 5
+          timeouts: 3
+          http_failures: 3
+    targets:
+      - target: reservation-service:3000
+        weight: 100
+
+  - name: room-service
+    algorithm: round-robin
+    healthchecks:
+      active:
+        http_path: /health
+        healthy:
+          interval: 5
+          successes: 2
+        unhealthy:
+          interval: 5
+          timeouts: 3
+          http_failures: 3
+    targets:
+      - target: room-service:3000
+        weight: 100
