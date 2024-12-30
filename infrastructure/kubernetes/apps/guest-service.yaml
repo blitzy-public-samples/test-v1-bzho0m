@@ -1,0 +1,171 @@
+# Guest Service Kubernetes Deployment Configuration
+# Version: 1.0.0
+# Purpose: Defines the deployment and service configuration for the Guest Service microservice
+# Dependencies: Requires namespace.yaml and configmap.yaml
+
+---
+# Deployment configuration for Guest Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guest-service
+  namespace: hotel-erp-${ENV}
+  labels:
+    app: hotel-erp
+    service: guest-service
+    version: ${VERSION}
+    tier: backend
+    managed-by: kubernetes
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+    prometheus.io/path: "/metrics"
+    description: "Guest Service microservice for managing guest profiles and preferences"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: hotel-erp
+      service: guest-service
+  template:
+    metadata:
+      labels:
+        app: hotel-erp
+        service: guest-service
+        version: ${VERSION}
+    spec:
+      containers:
+        - name: guest-service
+          image: hotel-erp/guest-service:${VERSION}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          envFrom:
+            - configMapRef:
+                name: hotel-erp-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: config-volume
+              mountPath: /app/config
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: config-volume
+          configMap:
+            name: hotel-erp-config
+      securityContext:
+        fsGroup: 1000
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: service
+                      operator: In
+                      values:
+                        - guest-service
+                topologyKey: kubernetes.io/hostname
+
+---
+# Service configuration for Guest Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: guest-service
+  namespace: hotel-erp-${ENV}
+  labels:
+    app: hotel-erp
+    service: guest-service
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    app: hotel-erp
+    service: guest-service
+
+---
+# Horizontal Pod Autoscaler for Guest Service
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: guest-service-hpa
+  namespace: hotel-erp-${ENV}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: guest-service
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
