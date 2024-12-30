@@ -1,0 +1,52 @@
+# storage.k8s.io/v1 - Kubernetes Storage API version 1.19+
+# ebs.csi.aws.com - AWS EBS CSI driver version 1.0+
+
+# Standard SSD Storage Class for general application data
+# Provides 3000 IOPS/GB using gp3 volumes
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hotel-erp-standard-ssd
+  annotations:
+    # Set as default storage class for the cluster
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  # Use gp3 volume type for better price/performance ratio
+  type: gp3
+  # Configure 3000 IOPS per GB as per requirements
+  iopsPerGB: "3000"
+  # Enable encryption by default for security
+  encrypted: "true"
+  # Use KMS key for encryption
+  kmsKeyId: ${AWS_KMS_KEY_ID}
+# Wait for pod scheduling before volume provisioning
+volumeBindingMode: WaitForFirstConsumer
+# Allow volume expansion for future scaling
+allowVolumeExpansion: true
+# Delete volumes when PVC is deleted
+reclaimPolicy: Delete
+
+---
+# High-Performance SSD Storage Class for critical database workloads
+# Provides guaranteed 5000 IOPS using io2 volumes
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hotel-erp-high-iops-ssd
+provisioner: ebs.csi.aws.com
+parameters:
+  # Use io2 volume type for consistent high performance
+  type: io2
+  # Configure fixed 5000 IOPS as per requirements
+  iops: "5000"
+  # Enable encryption by default for security
+  encrypted: "true"
+  # Use KMS key for encryption
+  kmsKeyId: ${AWS_KMS_KEY_ID}
+# Wait for pod scheduling before volume provisioning
+volumeBindingMode: WaitForFirstConsumer
+# Allow volume expansion for future scaling
+allowVolumeExpansion: true
+# Delete volumes when PVC is deleted
+reclaimPolicy: Delete
