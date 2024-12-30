@@ -1,0 +1,78 @@
+# Kubernetes v1 API
+# Purpose: Define isolated namespaces for Hotel Management ERP system components
+# with environment separation, security boundaries and resource management
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hotel-erp-prod
+  labels:
+    environment: production
+    app: hotel-erp
+    criticality: high
+    compliance: pci-dss
+    backup-policy: hourly
+  annotations:
+    description: "Production environment namespace with highest security and resource priority"
+    security.network.k8s.io/isolation: "strict"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hotel-erp-staging
+  labels:
+    environment: staging 
+    app: hotel-erp
+    criticality: medium
+    compliance: standard
+    backup-policy: daily
+  annotations:
+    description: "Staging environment namespace for pre-production validation"
+    security.network.k8s.io/isolation: "enabled"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hotel-erp-qa
+  labels:
+    environment: qa
+    app: hotel-erp
+    criticality: low
+    compliance: standard
+    backup-policy: weekly
+  annotations:
+    description: "QA environment namespace for testing and validation"
+    security.network.k8s.io/isolation: "enabled"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hotel-erp-dev
+  labels:
+    environment: development
+    app: hotel-erp
+    criticality: low
+    compliance: standard
+    backup-policy: weekly
+  annotations:
+    description: "Development environment namespace for ongoing development"
+    security.network.k8s.io/isolation: "enabled"
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    purpose: monitoring
+    app: hotel-erp
+    criticality: high
+    compliance: standard
+    backup-policy: daily
+  annotations:
+    description: "Monitoring tools namespace for observability and alerting"
+    security.network.k8s.io/isolation: "enabled"
