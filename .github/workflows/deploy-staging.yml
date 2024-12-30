@@ -1,0 +1,206 @@
+# Hotel Management ERP System - Staging Deployment Workflow
+# Version: 1.0.0
+# Purpose: Automated deployment pipeline for staging environment with enhanced monitoring and security
+
+name: Deploy to Staging
+
+# Workflow triggers
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'src/**'
+      - 'infrastructure/**'
+  workflow_dispatch:
+
+# Environment variables
+env:
+  AWS_REGION: us-west-2
+  CLUSTER_NAME: hotel-erp-staging
+  NAMESPACE: staging
+  MONITORING_ENABLED: 'true'
+  DEPLOYMENT_TIMEOUT: '1800'
+  NODE_VERSION: '18'
+
+# Permission configuration
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+jobs:
+  # Pre-deployment validation and security checks
+  security_scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Run Snyk Security Scan
+        uses: snyk/actions/scan@v1
+        with:
+          args: --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-scan-results
+          path: snyk-results.json
+          retention-days: 7
+
+  # Main deployment job
+  deploy_staging:
+    name: Deploy to Staging
+    needs: [security_scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: staging
+      url: https://staging.hotel-erp.example.com
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+            
+      - name: Verify RBAC permissions
+        run: |
+          kubectl auth can-i get deployments --namespace=${{ env.NAMESPACE }}
+          kubectl auth can-i update deployments --namespace=${{ env.NAMESPACE }}
+          
+      - name: Setup monitoring integration
+        if: env.MONITORING_ENABLED == 'true'
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo update
+          
+      - name: Deploy infrastructure
+        run: |
+          chmod +x ./infrastructure/scripts/deploy-staging.sh
+          ./infrastructure/scripts/deploy-staging.sh
+        env:
+          MONITORING_ENABLED: ${{ env.MONITORING_ENABLED }}
+          LOG_LEVEL: 'DEBUG'
+          
+      - name: Configure auto-scaling
+        run: |
+          kubectl apply -f infrastructure/kubernetes/apps/web-frontend.yaml
+          kubectl rollout status deployment/web-frontend -n ${{ env.NAMESPACE }}
+          
+      - name: Verify deployment health
+        run: |
+          # Check pod health
+          kubectl get pods -n ${{ env.NAMESPACE }} -l app=hotel-erp
+          
+          # Verify service endpoints
+          kubectl get endpoints -n ${{ env.NAMESPACE }}
+          
+          # Check monitoring integration
+          if [ "${{ env.MONITORING_ENABLED }}" = "true" ]; then
+            kubectl get servicemonitors -n monitoring
+          fi
+          
+      - name: Run integration tests
+        run: |
+          npm ci
+          npm run test:integration
+        env:
+          TEST_ENV: staging
+          API_BASE_URL: https://staging-api.hotel-erp.example.com
+          
+      - name: Generate deployment report
+        run: |
+          {
+            echo "Deployment Status Report"
+            echo "======================="
+            echo "Environment: Staging"
+            echo "Timestamp: $(date -u)"
+            kubectl get deployments -n ${{ env.NAMESPACE }} -o wide
+            echo "======================="
+          } > deployment-report.txt
+          
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-status
+          path: |
+            deployment-report.txt
+            /var/log/hotel-erp/*.log
+          retention-days: 7
+
+  # Post-deployment verification
+  verify_deployment:
+    name: Verify Deployment
+    needs: [deploy_staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+            
+      - name: Verify pod status
+        run: |
+          kubectl wait --for=condition=ready pods \
+            -l app=hotel-erp \
+            -n ${{ env.NAMESPACE }} \
+            --timeout=300s
+            
+      - name: Check service endpoints
+        run: |
+          endpoints=$(kubectl get endpoints -n ${{ env.NAMESPACE }} -o json)
+          echo "$endpoints" | jq -r '.items[] | select(.metadata.name=="web-frontend")'
+          
+      - name: Verify monitoring integration
+        if: env.MONITORING_ENABLED == 'true'
+        run: |
+          kubectl get servicemonitors -n monitoring
+          kubectl get prometheusrules -n monitoring
+          
+      - name: Generate health report
+        run: |
+          {
+            echo "Health Check Report"
+            echo "=================="
+            echo "Timestamp: $(date -u)"
+            kubectl get pods,svc,endpoints -n ${{ env.NAMESPACE }}
+            echo "=================="
+          } > health-report.txt
+          
+      - name: Upload health report
+        uses: actions/upload-artifact@v3
+        with:
+          name: health-report
+          path: health-report.txt
+          retention-days: 7
