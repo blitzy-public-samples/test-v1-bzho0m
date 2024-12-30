@@ -1,0 +1,94 @@
+# Kubernetes ConfigMap for Hotel Management ERP System
+# Version: v1.0.0
+# Purpose: Stores non-sensitive configuration for microservices and API gateway
+# Dependencies: Requires namespace.yaml for environment scoping
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hotel-erp-config
+  namespace: hotel-erp-${ENV}
+  labels:
+    app: hotel-erp
+    environment: ${ENV}
+    managed-by: kustomize
+    version: 1.0.0
+  annotations:
+    description: "Configuration for Hotel Management ERP microservices and API gateway"
+    last-updated: "${CURRENT_DATE}"
+data:
+  # API Gateway Configuration
+  API_GATEWAY_HOST: "api-gateway.hotel-erp-${ENV}.svc.cluster.local"
+  API_GATEWAY_PORT: "8000"
+  API_GATEWAY_ADMIN_PORT: "8001"
+  API_GATEWAY_SSL_ENABLED: "true"
+  API_GATEWAY_RATE_LIMIT_ENABLED: "true"
+  API_GATEWAY_RATE_LIMIT_WINDOW: "60"
+  API_GATEWAY_RATE_LIMIT_MAX_REQUESTS: "1000"
+
+  # Microservices Endpoints
+  BILLING_SERVICE_HOST: "billing-service.hotel-erp-${ENV}.svc.cluster.local"
+  BILLING_SERVICE_PORT: "3000"
+  GUEST_SERVICE_HOST: "guest-service.hotel-erp-${ENV}.svc.cluster.local"
+  GUEST_SERVICE_PORT: "3000"
+  RESERVATION_SERVICE_HOST: "reservation-service.hotel-erp-${ENV}.svc.cluster.local"
+  RESERVATION_SERVICE_PORT: "3000"
+  ROOM_SERVICE_HOST: "room-service.hotel-erp-${ENV}.svc.cluster.local"
+  ROOM_SERVICE_PORT: "3000"
+
+  # Cache Configuration
+  REDIS_HOST: "redis.hotel-erp-${ENV}.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_MAX_MEMORY: "2gb"
+  REDIS_MAX_MEMORY_POLICY: "allkeys-lru"
+
+  # Application Settings
+  LOG_LEVEL: "${ENV === 'production' ? 'info' : 'debug'}"
+  NODE_ENV: "${ENV}"
+  REQUEST_TIMEOUT: "30000"
+  RETRY_ATTEMPTS: "3"
+
+  # Health Check Configuration
+  HEALTH_CHECK_ENABLED: "true"
+  HEALTH_CHECK_INTERVAL: "30"
+  HEALTH_CHECK_TIMEOUT: "5"
+
+  # Observability Settings
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+
+  # Security and Performance
+  CORS_ALLOWED_ORIGINS: "*"
+  MAX_PAYLOAD_SIZE: "10mb"
+
+  # Service Discovery Settings
+  SERVICE_REGISTRY_ENABLED: "true"
+  SERVICE_REGISTRY_UPDATE_INTERVAL: "60"
+
+  # Circuit Breaker Configuration
+  CIRCUIT_BREAKER_ENABLED: "true"
+  CIRCUIT_BREAKER_TIMEOUT: "5000"
+  CIRCUIT_BREAKER_RESET_TIMEOUT: "30000"
+  CIRCUIT_BREAKER_ERROR_THRESHOLD: "50"
+
+  # Message Queue Settings
+  MESSAGE_QUEUE_HOST: "rabbitmq.hotel-erp-${ENV}.svc.cluster.local"
+  MESSAGE_QUEUE_PORT: "5672"
+  MESSAGE_QUEUE_MANAGEMENT_PORT: "15672"
+  MESSAGE_QUEUE_VHOST: "/${ENV}"
+
+  # Database Connection Pool
+  DB_POOL_MIN: "5"
+  DB_POOL_MAX: "20"
+  DB_POOL_IDLE_TIMEOUT: "10000"
+
+  # Feature Flags
+  FEATURE_DYNAMIC_PRICING: "true"
+  FEATURE_AUTOMATED_CHECKIN: "true"
+  FEATURE_GUEST_MESSAGING: "true"
+  FEATURE_ROOM_UPGRADES: "true"
+
+  # Notification Settings
+  NOTIFICATION_PROVIDER: "sns"
+  NOTIFICATION_BATCH_SIZE: "100"
+  NOTIFICATION_RETRY_COUNT: "3"
