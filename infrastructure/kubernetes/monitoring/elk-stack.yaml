@@ -1,0 +1,322 @@
+# ELK Stack Kubernetes Configuration for Hotel Management ERP
+# Version: 1.0.0
+# Dependencies:
+# - elasticsearch:7.17.0
+# - logstash:7.17.0
+# - kibana:7.17.0
+
+---
+# Network Policy for ELK Stack
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: elk-network-policy
+  namespace: monitoring
+spec:
+  podSelector:
+    matchLabels:
+      app: elk-stack
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app: hotel-erp
+      ports:
+        - port: 5044
+          protocol: TCP
+        - port: 9200
+          protocol: TCP
+        - port: 5601
+          protocol: TCP
+
+---
+# Service Account for ELK Stack
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: elk-service-account
+  namespace: monitoring
+  annotations:
+    kubernetes.io/enforce-mountable-secrets: "true"
+
+---
+# RBAC Role for ELK Stack
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: elk-role
+  namespace: monitoring
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Elasticsearch StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: monitoring
+  labels:
+    app: elk-stack
+    component: elasticsearch
+spec:
+  serviceName: elasticsearch
+  replicas: 3
+  selector:
+    matchLabels:
+      app: elk-stack
+      component: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elk-stack
+        component: elasticsearch
+    spec:
+      serviceAccountName: elk-service-account
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: fix-permissions
+          image: busybox:1.32
+          command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+      containers:
+        - name: elasticsearch
+          image: elasticsearch:7.17.0
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          env:
+            - name: cluster.name
+              value: hotel-erp-elk
+            - name: node.name
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: discovery.seed_hosts
+              value: "elasticsearch-0.elasticsearch,elasticsearch-1.elasticsearch,elasticsearch-2.elasticsearch"
+            - name: cluster.initial_master_nodes
+              value: "elasticsearch-0,elasticsearch-1,elasticsearch-2"
+            - name: ES_JAVA_OPTS
+              value: "-Xms2g -Xmx2g"
+            - name: xpack.security.enabled
+              value: "true"
+            - name: xpack.monitoring.collection.enabled
+              value: "true"
+          ports:
+            - name: rest
+              containerPort: 9200
+              protocol: TCP
+            - name: inter-node
+              containerPort: 9300
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+              scheme: HTTPS
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 9300
+            initialDelaySeconds: 60
+            periodSeconds: 20
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp2
+        resources:
+          requests:
+            storage: 100Gi
+
+---
+# Elasticsearch Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: monitoring
+  labels:
+    app: elk-stack
+    component: elasticsearch
+spec:
+  clusterIP: None
+  ports:
+    - port: 9200
+      name: rest
+    - port: 9300
+      name: inter-node
+  selector:
+    app: elk-stack
+    component: elasticsearch
+
+---
+# Logstash Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: monitoring
+  labels:
+    app: elk-stack
+    component: logstash
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: elk-stack
+      component: logstash
+  template:
+    metadata:
+      labels:
+        app: elk-stack
+        component: logstash
+    spec:
+      serviceAccountName: elk-service-account
+      containers:
+        - name: logstash
+          image: logstash:7.17.0
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          env:
+            - name: XPACK_MONITORING_ENABLED
+              value: "true"
+          ports:
+            - containerPort: 5044
+              name: beats
+            - containerPort: 9600
+              name: monitoring
+          readinessProbe:
+            httpGet:
+              path: /
+              port: monitoring
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+---
+# Logstash Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: monitoring
+  labels:
+    app: elk-stack
+    component: logstash
+spec:
+  ports:
+    - port: 5044
+      name: beats
+    - port: 9600
+      name: monitoring
+  selector:
+    app: elk-stack
+    component: logstash
+
+---
+# Kibana Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: monitoring
+  labels:
+    app: elk-stack
+    component: kibana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elk-stack
+      component: kibana
+  template:
+    metadata:
+      labels:
+        app: elk-stack
+        component: kibana
+    spec:
+      serviceAccountName: elk-service-account
+      containers:
+        - name: kibana
+          image: kibana:7.17.0
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: "https://elasticsearch:9200"
+            - name: XPACK_SECURITY_ENABLED
+              value: "true"
+            - name: XPACK_REPORTING_ENABLED
+              value: "true"
+          ports:
+            - containerPort: 5601
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 10
+
+---
+# Kibana Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: monitoring
+  labels:
+    app: elk-stack
+    component: kibana
+spec:
+  ports:
+    - port: 5601
+      name: http
+  selector:
+    app: elk-stack
+    component: kibana
+
+---
+# Prometheus ServiceMonitor for ELK metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: elk-metrics
+  namespace: monitoring
+  labels:
+    app: elk-stack
+spec:
+  selector:
+    matchLabels:
+      app: elk-stack
+  endpoints:
+    - port: monitoring
+      interval: 30s
+      path: /metrics
