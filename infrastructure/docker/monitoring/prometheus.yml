@@ -1,0 +1,152 @@
+# Prometheus Configuration v2.45.0
+# Purpose: Enterprise monitoring configuration for Hotel Management ERP system
+# Dependencies: prom/prometheus:v2.45.0
+
+global:
+  scrape_interval: 15s     # Default scrape interval for all jobs
+  evaluation_interval: 15s # Interval for evaluating rules
+  scrape_timeout: 10s     # Global timeout for scrape operations
+  external_labels:
+    environment: production
+    system: hotel_erp
+    region: us-west-2
+
+# Rule files for recording and alerting
+rule_files:
+  - "/etc/prometheus/rules/sla.rules.yml"
+  - "/etc/prometheus/rules/system.rules.yml"
+  - "/etc/prometheus/rules/business.rules.yml"
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - "alertmanager:9093"
+    route:
+      group_by: ['alertname', 'cluster', 'service']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: 'ops-team'
+
+# Storage configuration
+storage:
+  tsdb:
+    path: "/prometheus"
+    retention.time: 30d
+    retention.size: 100GB
+    wal_compression: true
+  remote_write:
+    - url: "http://thanos-sidecar:19291/api/v1/receive"
+
+# Scrape configurations
+scrape_configs:
+  # API Gateway metrics
+  - job_name: 'api-gateway'
+    metrics_path: '/metrics'
+    kubernetes_sd_configs:
+      - role: service
+        namespaces:
+          names: ['hotel-erp-prod']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_label_app]
+        regex: api-gateway
+        action: keep
+      - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_port]
+        action: replace
+        target_label: __metrics_path__
+    static_configs:
+      - targets: ['api-gateway:8000']
+
+  # Core Services
+  - job_name: 'hotel-erp-services'
+    metrics_path: '/metrics'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: ['hotel-erp-prod']
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: '(room-service|billing-service|guest-service|reservation-service)'
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: service
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+
+  # Node Exporter metrics
+  - job_name: 'node-metrics'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    metrics_path: '/metrics'
+
+  # RabbitMQ metrics
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq-exporter:9419']
+    metrics_path: '/metrics'
+
+  # PostgreSQL metrics
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    metrics_path: '/metrics'
+
+  # Kubernetes API server
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]
+        action: keep
+        regex: default;kubernetes
+
+  # SLA monitoring
+  - job_name: 'sla-metrics'
+    metrics_path: '/metrics/sla'
+    static_configs:
+      - targets: ['sla-exporter:9090']
+    scrape_interval: 1m
+    metric_relabel_configs:
+      - source_labels: [service]
+        target_label: sla_target
+        regex: '(.*)'
+        replacement: '$1'
+
+  # Business KPIs
+  - job_name: 'business-metrics'
+    metrics_path: '/metrics/business'
+    static_configs:
+      - targets: ['business-exporter:9091']
+    scrape_interval: 5m
+
+# Remote storage configuration
+remote_storage:
+  remote_read:
+    - url: "http://thanos-query:19192/api/v1/read"
+      read_recent: true
+  remote_write:
+    - url: "http://thanos-receive:19291/api/v1/write"
+      queue_config:
+        capacity: 500000
+        max_samples_per_send: 100000
+        batch_send_deadline: 5s
+
+# Exemplar storage
+exemplar_storage:
+  max_exemplars: 100000
