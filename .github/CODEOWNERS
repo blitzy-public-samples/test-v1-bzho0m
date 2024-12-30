@@ -1,0 +1,44 @@
+# Project leads review all root level changes for architectural consistency
+* @project-leads
+
+# Backend services code ownership
+/src/backend/ @backend-team
+
+# API Gateway - Joint ownership by API and Security teams
+/src/backend/src/api-gateway/ @api-team @security-team
+
+# Billing service - Joint ownership by Billing and Security teams for PCI compliance
+/src/backend/src/billing-service/ @billing-team @security-team
+
+# Guest service ownership
+/src/backend/src/guest-service/ @guest-service-team
+
+# Reservation service ownership
+/src/backend/src/reservation-service/ @reservation-team
+
+# Room service ownership
+/src/backend/src/room-service/ @room-service-team
+
+# WebSocket service ownership
+/src/backend/src/websocket-service/ @realtime-team
+
+# Frontend application code ownership
+/src/web/ @frontend-team
+
+# Mobile-specific code ownership
+/src/web/src/mobile/ @mobile-team
+
+# Infrastructure code ownership
+/infrastructure/ @devops-team @security-team
+
+# Kubernetes security policies
+/infrastructure/kubernetes/security/ @security-team
+
+# CI/CD workflows ownership
+/.github/workflows/ @devops-team
+
+# Security-critical components
+/src/backend/src/shared/utils/encryption.util.ts @security-team
+
+# Dependencies security review
+package.json @security-team @devops-team
