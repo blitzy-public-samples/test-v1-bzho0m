@@ -1,0 +1,215 @@
+# Hotel Management ERP Production Deployment Workflow
+# Version: 1.0.0
+# Purpose: Automated production deployment with manual approval, health checks, and rollback capabilities
+# Dependencies: AWS CLI v2, kubectl v1.25+, Docker v24+
+
+name: Production Deployment
+
+on:
+  # Trigger on main branch pushes to specific paths
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'infrastructure/**'
+  # Manual trigger with version input
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: true
+        type: string
+
+env:
+  AWS_REGION: us-west-2
+  CLUSTER_NAME: hotel-erp-production
+  NAMESPACE: production
+  DEPLOYMENT_TIMEOUT: "900"
+  DOCKER_BUILDKIT: "1"
+
+jobs:
+  verify_prerequisites:
+    name: Verify Deployment Prerequisites
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      ci_status: ${{ steps.check_ci.outputs.status }}
+      infra_status: ${{ steps.check_infra.outputs.status }}
+    
+    steps:
+      - name: Check CI Workflow Status
+        id: check_ci
+        run: |
+          CI_STATUS=$(curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/backend-ci.yml/runs?branch=main&status=completed&per_page=1" \
+            | jq -r '.workflow_runs[0].conclusion')
+          echo "status=$CI_STATUS" >> $GITHUB_OUTPUT
+          if [ "$CI_STATUS" != "success" ]; then
+            echo "::error::Latest CI workflow failed or not found"
+            exit 1
+          fi
+
+      - name: Download Test Results
+        uses: actions/download-artifact@v3
+        with:
+          name: test_results
+          path: test_results
+
+      - name: Verify Test Coverage
+        run: |
+          if [ $(jq '.coverage.lines.pct' test_results/coverage-summary.json) -lt 80 ]; then
+            echo "::error::Test coverage below required threshold"
+            exit 1
+          fi
+
+      - name: Check Infrastructure State
+        id: check_infra
+        run: |
+          aws eks describe-cluster \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }} \
+            --query 'cluster.status' \
+            --output text | grep "ACTIVE" || exit 1
+          echo "status=healthy" >> $GITHUB_OUTPUT
+
+  manual_approval:
+    name: Manual Deployment Approval
+    needs: verify_prerequisites
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 60
+    
+    steps:
+      - name: Display Deployment Info
+        run: |
+          echo "Version to deploy: ${{ github.event.inputs.version || github.sha }}"
+          echo "Target Environment: Production"
+          echo "Region: ${{ env.AWS_REGION }}"
+          echo "Cluster: ${{ env.CLUSTER_NAME }}"
+
+  deploy_production:
+    name: Deploy to Production
+    needs: [verify_prerequisites, manual_approval]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: true
+
+      - name: Setup kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+
+      - name: Create Database Backup
+        run: |
+          BACKUP_ID=$(date +%Y%m%d-%H%M%S)
+          aws rds create-db-snapshot \
+            --db-instance-identifier hotel-erp-production \
+            --db-snapshot-identifier "pre-deploy-${BACKUP_ID}"
+          echo "BACKUP_ID=${BACKUP_ID}" >> $GITHUB_ENV
+
+      - name: Deploy Base Infrastructure
+        run: |
+          kubectl apply -f infrastructure/kubernetes/base/namespace.yaml
+          kubectl apply -f infrastructure/kubernetes/base/configmap.yaml
+          kubectl apply -f infrastructure/kubernetes/base/secrets.yaml
+
+      - name: Deploy API Gateway
+        run: |
+          kubectl apply -f infrastructure/kubernetes/apps/api-gateway.yaml
+          kubectl rollout status deployment/api-gateway -n ${{ env.NAMESPACE }} --timeout=${{ env.DEPLOYMENT_TIMEOUT }}s
+
+      - name: Deploy Web Frontend
+        run: |
+          kubectl apply -f infrastructure/kubernetes/apps/web-frontend.yaml
+          kubectl rollout status deployment/web-frontend -n ${{ env.NAMESPACE }} --timeout=${{ env.DEPLOYMENT_TIMEOUT }}s
+
+      - name: Update DNS Records
+        run: |
+          aws route53 change-resource-record-sets \
+            --hosted-zone-id ${{ secrets.ROUTE53_ZONE_ID }} \
+            --change-batch file://infrastructure/dns/production.json
+
+  verify_deployment:
+    name: Verify Deployment Health
+    needs: deploy_production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Check Pod Status
+        run: |
+          kubectl get pods -n ${{ env.NAMESPACE }} \
+            -o jsonpath='{.items[?(@.status.phase!="Running")].metadata.name}' | \
+            grep -q . && exit 1 || exit 0
+
+      - name: Verify Service Endpoints
+        run: |
+          GATEWAY_URL=$(kubectl get svc api-gateway -n ${{ env.NAMESPACE }} \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          curl -sf "https://${GATEWAY_URL}/health" || exit 1
+
+      - name: Monitor Error Rates
+        run: |
+          ERROR_RATE=$(kubectl exec -n monitoring prometheus-0 -c prometheus -- \
+            curl -s 'http://localhost:9090/api/v1/query' \
+            --data-urlencode 'query=rate(http_requests_total{code=~"5.."}[5m])' \
+            | jq '.data.result[0].value[1]')
+          if (( $(echo "$ERROR_RATE > 0.01" | bc -l) )); then
+            echo "::error::Error rate too high: ${ERROR_RATE}"
+            exit 1
+          fi
+
+  rollback_deployment:
+    name: Rollback Failed Deployment
+    needs: [deploy_production, verify_deployment]
+    runs-on: ubuntu-latest
+    if: failure()
+    timeout-minutes: 15
+    
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+
+      - name: Execute Rollback
+        run: |
+          kubectl rollout undo deployment/api-gateway -n ${{ env.NAMESPACE }}
+          kubectl rollout undo deployment/web-frontend -n ${{ env.NAMESPACE }}
+          
+      - name: Notify Rollback Status
+        if: always()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-message: "Production deployment rollback completed. Please check logs for details."
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
