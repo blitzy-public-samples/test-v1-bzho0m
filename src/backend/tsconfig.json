@@ -1,0 +1,50 @@
+{
+  "compilerOptions": {
+    // ECMAScript target version
+    "target": "ES2022",
+    "module": "CommonJS",
+    "lib": ["ES2022"],
+
+    // Output configuration
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "sourceMap": true,
+    "declaration": true,
+
+    // Strict type checking
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+
+    // Module resolution
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    
+    // Decorators support for dependency injection and ORMs
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    // Base URL and path aliases for microservices
+    "baseUrl": "./src",
+    "paths": {
+      "@shared/*": ["shared/*"],
+      "@billing/*": ["billing-service/src/*"],
+      "@guest/*": ["guest-service/src/*"],
+      "@reservation/*": ["reservation-service/src/*"],
+      "@room/*": ["room-service/src/*"],
+      "@websocket/*": ["websocket-service/src/*"]
+    }
+  },
+  
+  // Files to include/exclude
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage"
+  ]
+}
