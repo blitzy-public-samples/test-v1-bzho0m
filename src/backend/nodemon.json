@@ -1,0 +1,46 @@
+{
+  "watch": [
+    "src/**/*.ts",
+    "src/**/*.json",
+    "src/services/**/*.ts",
+    "src/api/**/*.ts",
+    "src/config/**/*.json",
+    "src/shared/**/*.ts",
+    "src/billing-service/**/*.ts",
+    "src/guest-service/**/*.ts", 
+    "src/reservation-service/**/*.ts",
+    "src/room-service/**/*.ts",
+    "src/websocket-service/**/*.ts"
+  ],
+  "ignore": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/*.d.ts",
+    "src/logs/*",
+    "src/temp/*",
+    ".git",
+    "**/*.swp",
+    "**/.DS_Store"
+  ],
+  "ext": ".ts,.js,.json",
+  "exec": "ts-node -r tsconfig-paths/register -r source-map-support/register ./src/index.ts",
+  "verbose": true,
+  "delay": 1000,
+  "events": {
+    "restart": "clear && echo '\u001b[32mServer restarted at ' + new Date().toLocaleString() + '\u001b[0m'",
+    "crash": "echo '\u001b[31mApplication crashed - waiting for file changes before starting...\u001b[0m'"
+  },
+  "env": {
+    "NODE_ENV": "development",
+    "TS_NODE_PROJECT": "./tsconfig.json",
+    "TS_NODE_TRANSPILE_ONLY": "false",
+    "TS_NODE_FILES": "true",
+    "DEBUG": "hotel-erp:*",
+    "TS_NODE_IGNORE": "false"
+  },
+  "legacyWatch": false,
+  "restartable": "rs"
+}
