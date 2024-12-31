@@ -1,0 +1,81 @@
+{
+  "compilerOptions": {
+    // ECMAScript target version
+    "target": "ES2020",
+    
+    // Standard library files to include
+    "lib": [
+      "DOM",
+      "DOM.Iterable", 
+      "ESNext"
+    ],
+    
+    // Module system configuration
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    
+    // Type checking and strict mode options
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    
+    // Module interop settings
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    
+    // JavaScript support
+    "allowJs": true,
+    "skipLibCheck": true,
+    
+    // Build output options
+    "noEmit": true,
+    "incremental": true,
+    "sourceMap": true,
+    "declaration": true,
+    
+    // Path aliases for cleaner imports
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@components/*": ["src/components/*"],
+      "@services/*": ["src/services/*"],
+      "@utils/*": ["src/utils/*"],
+      "@hooks/*": ["src/hooks/*"],
+      "@styles/*": ["src/styles/*"],
+      "@types/*": ["src/types/*"]
+    },
+    
+    // Type definitions
+    "types": [
+      "node",
+      "jest",
+      "@testing-library/jest-dom",
+      "react",
+      "react-native"
+    ]
+  },
+  
+  // Files to include in compilation
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "src/**/*.d.ts"
+  ],
+  
+  // Files to exclude from compilation
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "coverage",
+    ".next",
+    "out"
+  ]
+}
