@@ -1,0 +1,29 @@
+node_modules
+pnpm-lock.yaml
+
+# Build outputs
+dist
+build
+coverage
+
+# Development files
+tests
+.git
+.gitignore
+.env*
+*.log
+README.md
+.vscode
+docker-compose*.yml
+.eslintrc*
+.prettierrc*
+nodemon.json
+
+# IDE files
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
